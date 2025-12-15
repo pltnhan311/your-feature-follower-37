@@ -42,9 +42,9 @@ export default function ApprovalHistory() {
     }
   }, [user]);
 
-  const loadHistory = () => {
+  const loadHistory = async () => {
     if (!user) return;
-    setHistory(ManagerService.getApprovalHistory(user.id));
+    setHistory(await ManagerService.getApprovalHistory(user.id));
   };
 
   const filteredHistory = history

@@ -6,11 +6,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { 
-  Users, 
-  UserCheck, 
-  UserX, 
-  Clock, 
+import {
+  Users,
+  UserCheck,
+  UserX,
+  Clock,
   AlertTriangle,
   Calendar,
   FileText,
@@ -33,12 +33,13 @@ export default function ManagerDashboard() {
     }
   }, [user]);
 
-  const loadData = () => {
+  const loadData = async () => {
     if (!user) return;
-    setStats(ManagerService.getTeamStats(user.id));
-    setCalendar(ManagerService.getTeamCalendar(user.id));
-    setAlerts(ManagerService.getLeaveAlerts(user.id));
-    setPendingCount(ManagerService.getPendingRequests(user.id).length);
+    setStats(await ManagerService.getTeamStats(user.id));
+    setCalendar(await ManagerService.getTeamCalendar(user.id));
+    setAlerts(await ManagerService.getLeaveAlerts(user.id));
+    const pendingRequests = await ManagerService.getPendingRequests(user.id);
+    setPendingCount(pendingRequests.length);
   };
 
   if (!user) return null;
@@ -153,8 +154,8 @@ export default function ManagerDashboard() {
           <CardContent>
             <div className="grid grid-cols-7 gap-2">
               {calendar.map((day, index) => (
-                <div 
-                  key={index} 
+                <div
+                  key={index}
                   className="min-h-[120px] rounded-lg border p-2 hover:bg-muted/50 transition-colors"
                 >
                   <div className="text-xs font-medium text-muted-foreground mb-1">
@@ -165,13 +166,12 @@ export default function ManagerDashboard() {
                   </div>
                   <div className="space-y-1">
                     {day.items.slice(0, 3).map((item, itemIndex) => (
-                      <div 
+                      <div
                         key={itemIndex}
-                        className={`text-xs p-1 rounded truncate ${
-                          item.type === 'leave' 
-                            ? 'bg-warning/10 text-warning border border-warning/20' 
+                        className={`text-xs p-1 rounded truncate ${item.type === 'leave'
+                            ? 'bg-warning/10 text-warning border border-warning/20'
                             : 'bg-primary/10 text-primary border border-primary/20'
-                        }`}
+                          }`}
                         title={`${item.userName} - ${item.detail}`}
                       >
                         <span className="font-medium">{item.userName.split(' ').pop()}</span>

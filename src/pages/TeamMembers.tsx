@@ -5,8 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
-import { 
-  Users, 
+import {
+  Users,
   Search,
   Mail,
   Phone,
@@ -28,9 +28,9 @@ export default function TeamMembers() {
     }
   }, [user]);
 
-  const loadMembers = () => {
+  const loadMembers = async () => {
     if (!user) return;
-    setMembers(ManagerService.getTeamMembers(user.id));
+    setMembers(await ManagerService.getTeamMembers(user.id));
   };
 
   const getInitials = (name: string) => {
@@ -57,8 +57,8 @@ export default function TeamMembers() {
     if (!searchTerm) return true;
     const term = searchTerm.toLowerCase();
     return m.fullName.toLowerCase().includes(term) ||
-           m.email.toLowerCase().includes(term) ||
-           m.position.toLowerCase().includes(term);
+      m.email.toLowerCase().includes(term) ||
+      m.position.toLowerCase().includes(term);
   });
 
   if (!user) return null;

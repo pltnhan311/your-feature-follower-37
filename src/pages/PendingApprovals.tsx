@@ -33,11 +33,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { 
-  Check, 
-  X, 
-  CheckCheck, 
-  Filter, 
+import {
+  Check,
+  X,
+  CheckCheck,
+  Filter,
   Calendar,
   Clock,
   FileText,
@@ -69,9 +69,9 @@ export default function PendingApprovals() {
     }
   }, [user]);
 
-  const loadRequests = () => {
+  const loadRequests = async () => {
     if (!user) return;
-    setRequests(ManagerService.getPendingRequests(user.id));
+    setRequests(await ManagerService.getPendingRequests(user.id));
     setSelectedIds(new Set());
   };
 
@@ -220,7 +220,7 @@ export default function PendingApprovals() {
               {/* Bulk Actions */}
               <div className="ml-auto flex items-center gap-2">
                 {selectedIds.size > 0 && (
-                  <Button 
+                  <Button
                     onClick={() => setBulkApproveDialogOpen(true)}
                     className="gap-2"
                   >
@@ -274,10 +274,10 @@ export default function PendingApprovals() {
                           <span className="font-medium">{request.userName}</span>
                         </td>
                         <td className="py-4">
-                          <Badge 
+                          <Badge
                             className={
-                              request.type === 'leave' 
-                                ? 'bg-warning/10 text-warning hover:bg-warning/20' 
+                              request.type === 'leave'
+                                ? 'bg-warning/10 text-warning hover:bg-warning/20'
                                 : 'bg-primary/10 text-primary hover:bg-primary/20'
                             }
                           >
