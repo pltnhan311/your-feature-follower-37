@@ -82,7 +82,7 @@ const mapDbToPayrollRun = (row: any): PayrollRun => ({
 
 export class HRService {
   // ========== Employee Management ==========
-  
+
   static async getAllEmployees(): Promise<User[]> {
     return UserService.getAll();
   }
@@ -93,7 +93,7 @@ export class HRService {
       .select('*, manager:manager_id(full_name)')
       .neq('status', 'inactive')
       .order('full_name');
-    
+
     if (error) return [];
     return (data || []).map((profile: any) => ({
       id: profile.id,
@@ -142,7 +142,7 @@ export class HRService {
     }
 
     const { data, error } = await queryBuilder.order('full_name');
-    
+
     if (error) return [];
     return (data || []).map((profile: any) => ({
       id: profile.id,
@@ -166,16 +166,71 @@ export class HRService {
   }
 
   static async createEmployee(data: Omit<User, 'id' | 'employeeId'>, performedBy: { id: string; name: string }): Promise<User | null> {
-    // For creating employees, we need to use Supabase Auth admin functions
-    // This would typically be done through an edge function
-    // For now, this is a placeholder - actual implementation requires auth admin
-    console.warn('Creating employees requires Supabase Auth admin - implement via edge function');
-    return null;
+    try {
+      // Get the current session
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('No active session');
+      }
+
+      // Call the edge function to create the employee
+      const { data: result, error } = await supabase.functions.invoke('create-employee', {
+        body: {
+          fullName: data.fullName,
+          email: data.email,
+          phone: data.phone,
+          idNumber: data.idNumber,
+          department: data.department,
+          position: data.position,
+          location: data.location,
+          startDate: data.startDate,
+          contractType: data.contractType,
+          baseSalary: data.baseSalary,
+          role: data.role,
+          status: data.status,
+          managerId: data.managerId,
+        },
+      });
+
+      if (error) {
+        console.error('Error calling create-employee function:', error);
+        throw new Error(error.message || 'Failed to create employee');
+      }
+
+      if (!result.success || !result.user) {
+        throw new Error(result.error || 'Failed to create employee');
+      }
+
+      // Map the result to User type
+      const newUser: User = {
+        id: result.user.id,
+        employeeId: result.user.employee_id,
+        fullName: result.user.full_name,
+        email: result.user.email,
+        phone: result.user.phone || '',
+        avatar: result.user.avatar,
+        role: result.user.role,
+        department: result.user.department,
+        position: result.user.position,
+        location: result.user.location || '',
+        startDate: result.user.start_date,
+        contractType: result.user.contract_type || '',
+        managerId: result.user.manager_id,
+        baseSalary: Number(result.user.base_salary) || 0,
+        status: result.user.status,
+        idNumber: result.user.id_number || '',
+      };
+
+      return newUser;
+    } catch (error) {
+      console.error('Error in createEmployee:', error);
+      throw error;
+    }
   }
 
   static async updateEmployee(
-    id: string, 
-    updates: Partial<User>, 
+    id: string,
+    updates: Partial<User>,
     performedBy: { id: string; name: string }
   ): Promise<User | null> {
     const currentUser = await UserService.getById(id);
@@ -279,7 +334,7 @@ export class HRService {
       .select('*')
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
-    
+
     if (error) return [];
     return (data || []).map(mapDbToHistoryEntry);
   }
@@ -292,7 +347,7 @@ export class HRService {
       .select('*')
       .limit(1)
       .maybeSingle();
-    
+
     if (error || !data) {
       // Return default config
       return {
@@ -332,7 +387,7 @@ export class HRService {
         .eq('id', existing.id)
         .select()
         .single();
-      
+
       if (error) return null;
       return mapDbToPayrollConfig(data);
     }
@@ -346,7 +401,7 @@ export class HRService {
       .from('payroll_runs')
       .select('*')
       .order('period', { ascending: false });
-    
+
     if (error) return [];
     return (data || []).map(mapDbToPayrollRun);
   }
@@ -357,7 +412,7 @@ export class HRService {
       .select('*')
       .eq('period', period)
       .maybeSingle();
-    
+
     if (error || !data) return null;
     return mapDbToPayrollRun(data);
   }
@@ -365,13 +420,13 @@ export class HRService {
   static async runPayroll(period: string, runBy: { id: string; name: string }): Promise<PayrollRun | null> {
     const activeEmployees = await this.getActiveEmployees();
     const config = await this.getPayrollConfig();
-    
+
     const [year, month] = period.split('-');
     const periodLabel = `Tháng ${month}, ${year}`;
 
     // Create or update payroll run
     let payrollRun = await this.getPayrollRun(period);
-    
+
     if (!payrollRun) {
       const { data, error } = await supabase
         .from('payroll_runs')
@@ -387,7 +442,7 @@ export class HRService {
         })
         .select()
         .single();
-      
+
       if (error) {
         console.error('Error creating payroll run:', error);
         return null;
@@ -426,7 +481,7 @@ export class HRService {
       const grossSalary = employee.baseSalary + otPay;
       const socialInsurance = Math.round(grossSalary * config.socialInsuranceRate);
       const healthInsurance = Math.round(grossSalary * config.healthInsuranceRate);
-      
+
       const taxableIncome = grossSalary - socialInsurance - healthInsurance - config.personalDeduction;
       const tax = taxableIncome > 0 ? Math.round(this.calculateTax(taxableIncome)) : 0;
 

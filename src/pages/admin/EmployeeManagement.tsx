@@ -57,10 +57,30 @@ export default function EmployeeManagement() {
 
   const handleCreateEmployee = async (data: Omit<User, 'id' | 'employeeId'>) => {
     if (!user) return;
-    await HRService.createEmployee(data, { id: user.id, name: user.fullName });
-    toast({ title: 'Thành công', description: 'Đã tạo hồ sơ nhân viên mới' });
-    setIsFormOpen(false);
-    loadData();
+    try {
+      const newUser = await HRService.createEmployee(data, { id: user.id, name: user.fullName });
+      if (newUser) {
+        toast({
+          title: 'Thành công',
+          description: 'Đã tạo hồ sơ nhân viên mới.'
+        });
+        setIsFormOpen(false);
+        loadData();
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Lỗi',
+          description: 'Không thể tạo nhân viên. Vui lòng thử lại.'
+        });
+      }
+    } catch (error: any) {
+      console.error('Failed to create employee:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Lỗi',
+        description: error.message || 'Không thể tạo nhân viên. Vui lòng thử lại.'
+      });
+    }
   };
 
   const handleUpdateEmployee = async (data: Partial<User>) => {
@@ -256,7 +276,7 @@ export default function EmployeeManagement() {
                             <AlertDialogHeader>
                               <AlertDialogTitle>Xác nhận nghỉ việc</AlertDialogTitle>
                               <AlertDialogDescription>
-                                Bạn có chắc muốn đánh dấu nhân viên "{emp.fullName}" nghỉ việc? 
+                                Bạn có chắc muốn đánh dấu nhân viên "{emp.fullName}" nghỉ việc?
                                 Hồ sơ sẽ được giữ lại nhưng nhân viên sẽ không thể đăng nhập.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
