@@ -32,6 +32,8 @@ export default function EmployeeManagement() {
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importResults, setImportResults] = useState<{ successful: number; failed: number; errors: string[] } | null>(null);
+  const [parsedImportData, setParsedImportData] = useState<Omit<User, 'id' | 'employeeId'>[] | null>(null);
+  const [importValidationErrors, setImportValidationErrors] = useState<string[]>([]);
   const [stats, setStats] = useState({
     totalEmployees: 0,
     activeEmployees: 0,
@@ -89,11 +91,28 @@ export default function EmployeeManagement() {
 
   const handleUpdateEmployee = async (data: Partial<User>) => {
     if (!user || !editingEmployee) return;
-    await HRService.updateEmployee(editingEmployee.id, data, { id: user.id, name: user.fullName });
-    toast({ title: 'Thành công', description: 'Đã cập nhật hồ sơ nhân viên' });
-    setEditingEmployee(null);
-    setIsFormOpen(false);
-    loadData();
+    try {
+      const result = await HRService.updateEmployee(editingEmployee.id, data, { id: user.id, name: user.fullName });
+      if (result) {
+        toast({ title: 'Thành công', description: 'Đã cập nhật hồ sơ nhân viên' });
+        setEditingEmployee(null);
+        setIsFormOpen(false);
+        loadData();
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Lỗi',
+          description: 'Không thể cập nhật nhân viên. Vui lòng thử lại.'
+        });
+      }
+    } catch (error: any) {
+      console.error('Failed to update employee:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Lỗi',
+        description: error.message || 'Không thể cập nhật nhân viên. Vui lòng thử lại.'
+      });
+    }
   };
 
   const handleDeleteEmployee = async (employee: User) => {
@@ -118,10 +137,6 @@ export default function EmployeeManagement() {
     }
 
     try {
-      setIsImporting(true);
-      setIsImportOpen(true);
-      setImportResults(null);
-
       // Read and parse CSV
       const content = await readFileAsText(file);
       const rows = parseCSV(content);
@@ -140,9 +155,10 @@ export default function EmployeeManagement() {
       });
 
       if (validRows.length === 0) {
-        setImportResults({ successful: 0, failed: rows.length, errors });
         toast({ variant: 'destructive', title: 'Lỗi', description: 'Không có dữ liệu hợp lệ để import' });
-        setIsImporting(false);
+        setImportValidationErrors(errors);
+        setParsedImportData(null);
+        setIsImportOpen(true);
         return;
       }
 
@@ -165,15 +181,38 @@ export default function EmployeeManagement() {
         managerName: '',
       }));
 
-      // Bulk create
-      if (!user) {
-        toast({ variant: 'destructive', title: 'Lỗi', description: 'Không tìm thấy thông tin người dùng' });
-        setIsImporting(false);
-        return;
-      }
+      // Store parsed data and validation errors for preview
+      setParsedImportData(employeesToCreate);
+      setImportValidationErrors(errors);
+      setImportResults(null);
+      setIsImportOpen(true);
+
+      toast({
+        title: 'Đã phân tích file',
+        description: `${validRows.length} bản ghi hợp lệ${errors.length > 0 ? `, ${errors.length} lỗi` : ''}. Vui lòng xem xét và xác nhận.`
+      });
+    } catch (error: any) {
+      console.error('Parse error:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Lỗi',
+        description: error.message || 'Lỗi khi đọc file'
+      });
+    } finally {
+      // Reset file input
+      event.target.value = '';
+    }
+  };
+
+  const handleConfirmImport = async () => {
+    if (!parsedImportData || !user) return;
+
+    try {
+      setIsImporting(true);
+      setImportResults(null);
 
       const result = await HRService.bulkCreateEmployees(
-        employeesToCreate,
+        parsedImportData,
         { id: user.id, name: user.fullName }
       );
 
@@ -184,8 +223,8 @@ export default function EmployeeManagement() {
 
       setImportResults({
         successful: result.successful,
-        failed: result.failed + errors.length,
-        errors: [...errors, ...creationErrors],
+        failed: result.failed + importValidationErrors.length,
+        errors: [...importValidationErrors, ...creationErrors],
       });
 
       if (result.successful > 0) {
@@ -194,6 +233,7 @@ export default function EmployeeManagement() {
           description: `Đã tạo ${result.successful} nhân viên. ${result.failed > 0 ? `${result.failed} thất bại.` : ''}`
         });
         loadData();
+        setParsedImportData(null);
       } else {
         toast({
           variant: 'destructive',
@@ -206,14 +246,13 @@ export default function EmployeeManagement() {
       toast({
         variant: 'destructive',
         title: 'Lỗi',
-        description: error.message || 'Lỗi khi import file'
+        description: error.message || 'Lỗi khi import'
       });
     } finally {
       setIsImporting(false);
-      // Reset file input
-      event.target.value = '';
     }
   };
+
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -450,11 +489,20 @@ export default function EmployeeManagement() {
         </DialogContent>
       </Dialog>
 
-      {/* Import Results Dialog */}
-      <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      {/* Import Preview/Results Dialog */}
+      <Dialog open={isImportOpen} onOpenChange={(open) => {
+        setIsImportOpen(open);
+        if (!open) {
+          setParsedImportData(null);
+          setImportResults(null);
+          setImportValidationErrors([]);
+        }
+      }}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Kết quả import</DialogTitle>
+            <DialogTitle>
+              {parsedImportData && !importResults ? 'Xem trước dữ liệu import' : 'Kết quả import'}
+            </DialogTitle>
           </DialogHeader>
           {isImporting ? (
             <div className="flex flex-col items-center justify-center py-8">
@@ -487,9 +535,87 @@ export default function EmployeeManagement() {
                   </div>
                 </div>
               )}
-              <Button onClick={() => setIsImportOpen(false)} className="w-full">
+              <Button onClick={() => {
+                setIsImportOpen(false);
+                setParsedImportData(null);
+                setImportResults(null);
+                setImportValidationErrors([]);
+              }} className="w-full">
                 Đóng
               </Button>
+            </div>
+          ) : parsedImportData ? (
+            <div className="space-y-4">
+              {/* Validation warnings */}
+              {importValidationErrors.length > 0 && (
+                <div className="bg-warning/10 border border-warning/20 rounded-lg p-4">
+                  <h4 className="font-semibold mb-2 text-warning">Cảnh báo ({importValidationErrors.length} lỗi):</h4>
+                  <div className="max-h-40 overflow-y-auto space-y-1 text-sm">
+                    {importValidationErrors.slice(0, 5).map((error, index) => (
+                      <p key={index} className="text-muted-foreground">• {error}</p>
+                    ))}
+                    {importValidationErrors.length > 5 && (
+                      <p className="text-muted-foreground italic">... và {importValidationErrors.length - 5} lỗi khác</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Data preview */}
+              <div>
+                <h4 className="font-semibold mb-2">Dữ liệu hợp lệ ({parsedImportData.length} bản ghi):</h4>
+                <div className="border rounded-lg max-h-80 overflow-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Họ tên</TableHead>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Phòng ban</TableHead>
+                        <TableHead>Chức vụ</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {parsedImportData.slice(0, 10).map((emp, index) => (
+                        <TableRow key={index}>
+                          <TableCell>{emp.fullName}</TableCell>
+                          <TableCell className="text-sm">{emp.email}</TableCell>
+                          <TableCell className="text-sm">{emp.department}</TableCell>
+                          <TableCell className="text-sm">{emp.position}</TableCell>
+                        </TableRow>
+                      ))}
+                      {parsedImportData.length > 10 && (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-center text-muted-foreground italic">
+                            ... và {parsedImportData.length - 10} bản ghi khác
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex gap-3 pt-4 border-t">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsImportOpen(false);
+                    setParsedImportData(null);
+                    setImportValidationErrors([]);
+                  }}
+                  className="flex-1"
+                >
+                  Hủy
+                </Button>
+                <Button
+                  onClick={handleConfirmImport}
+                  className="flex-1"
+                  disabled={parsedImportData.length === 0}
+                >
+                  Xác nhận import {parsedImportData.length} nhân viên
+                </Button>
+              </div>
             </div>
           ) : null}
         </DialogContent>

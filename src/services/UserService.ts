@@ -38,7 +38,8 @@ const mapUserToProfile = (user: Partial<User>): any => {
   if (user.location !== undefined) profile.location = user.location;
   if (user.startDate !== undefined) profile.start_date = user.startDate;
   if (user.contractType !== undefined) profile.contract_type = user.contractType;
-  if (user.managerId !== undefined) profile.manager_id = user.managerId;
+  // Convert empty string to null for UUID field
+  if (user.managerId !== undefined) profile.manager_id = user.managerId || null;
   if (user.baseSalary !== undefined) profile.base_salary = user.baseSalary;
   if (user.status !== undefined) profile.status = user.status;
   if (user.idNumber !== undefined) profile.id_number = user.idNumber;
@@ -62,7 +63,7 @@ export class UserService {
       .from('profiles')
       .select('*, manager:manager_id(full_name)')
       .order('full_name');
-    
+
     if (error) {
       console.error('Error fetching users:', error);
       return [];
@@ -76,7 +77,7 @@ export class UserService {
       .select('*, manager:manager_id(full_name)')
       .eq('id', id)
       .maybeSingle();
-    
+
     if (error || !data) {
       console.error('Error fetching user:', error);
       return null;
@@ -90,7 +91,7 @@ export class UserService {
       .select('*, manager:manager_id(full_name)')
       .eq('employee_id', employeeId)
       .maybeSingle();
-    
+
     if (error || !data) return null;
     return mapProfileToUser(data);
   }
@@ -101,7 +102,7 @@ export class UserService {
       .select('*, manager:manager_id(full_name)')
       .eq('email', email)
       .maybeSingle();
-    
+
     if (error || !data) return null;
     return mapProfileToUser(data);
   }
@@ -114,12 +115,12 @@ export class UserService {
       .insert(mapUserToProfile(user))
       .select()
       .single();
-    
+
     if (error) {
       console.error('Error creating user:', error);
       return null;
     }
-    
+
     // Leave balance is auto-created by trigger
     return mapProfileToUser(data);
   }
@@ -131,7 +132,7 @@ export class UserService {
       .eq('id', id)
       .select('*, manager:manager_id(full_name)')
       .single();
-    
+
     if (error) {
       console.error('Error updating user:', error);
       return null;
@@ -145,7 +146,7 @@ export class UserService {
       .from('profiles')
       .update({ status: 'inactive' })
       .eq('id', id);
-    
+
     return !error;
   }
 
@@ -155,7 +156,7 @@ export class UserService {
       .select('*')
       .eq('user_id', userId)
       .maybeSingle();
-    
+
     if (error || !data) return null;
     return mapDbLeaveBalance(data);
   }
@@ -174,7 +175,7 @@ export class UserService {
       .eq('user_id', userId)
       .select()
       .single();
-    
+
     if (error) {
       console.error('Error updating leave balance:', error);
       return null;
@@ -187,7 +188,7 @@ export class UserService {
       .from('profiles')
       .select('*, manager:manager_id(full_name)')
       .eq('department', department);
-    
+
     if (error) return [];
     return (data || []).map(mapProfileToUser);
   }
@@ -197,7 +198,7 @@ export class UserService {
       .from('profiles')
       .select('*, manager:manager_id(full_name)')
       .eq('manager_id', managerId);
-    
+
     if (error) return [];
     return (data || []).map(mapProfileToUser);
   }
