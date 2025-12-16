@@ -228,6 +228,51 @@ export class HRService {
     }
   }
 
+
+  static async bulkCreateEmployees(
+    employees: Omit<User, 'id' | 'employeeId'>[],
+    performedBy: { id: string; name: string }
+  ): Promise<{
+    successful: number;
+    failed: number;
+    results: Array<{ success: boolean; email: string; error?: string; user?: User }>;
+  }> {
+    const results: Array<{ success: boolean; email: string; error?: string; user?: User }> = [];
+    let successful = 0;
+    let failed = 0;
+
+    for (const employeeData of employees) {
+      try {
+        const newUser = await this.createEmployee(employeeData, performedBy);
+        if (newUser) {
+          results.push({
+            success: true,
+            email: employeeData.email,
+            user: newUser,
+          });
+          successful++;
+        } else {
+          results.push({
+            success: false,
+            email: employeeData.email,
+            error: 'Failed to create employee',
+          });
+          failed++;
+        }
+      } catch (error: any) {
+        results.push({
+          success: false,
+          email: employeeData.email,
+          error: error.message || 'Unknown error',
+        });
+        failed++;
+      }
+    }
+
+    return { successful, failed, results };
+  }
+
+
   static async updateEmployee(
     id: string,
     updates: Partial<User>,

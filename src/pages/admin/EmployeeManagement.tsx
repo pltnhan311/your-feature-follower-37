@@ -12,9 +12,10 @@ import { useToast } from '@/hooks/use-toast';
 import { HRService } from '@/services/HRService';
 import { useAuth } from '@/contexts/AuthContext';
 import { User } from '@/types';
-import { Search, Plus, Eye, Edit, Trash2, Users, UserCheck, UserX, Clock } from 'lucide-react';
+import { Search, Plus, Eye, Edit, Trash2, Users, UserCheck, UserX, Clock, Download, Upload } from 'lucide-react';
 import { EmployeeForm } from '@/components/admin/EmployeeForm';
 import { EmployeeDetail } from '@/components/admin/EmployeeDetail';
+import { downloadTemplate, readFileAsText, parseCSV, validateImportRow, ImportRow } from '@/utils/importUtils';
 
 export default function EmployeeManagement() {
   const { user } = useAuth();
@@ -28,6 +29,9 @@ export default function EmployeeManagement() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<User | null>(null);
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importResults, setImportResults] = useState<{ successful: number; failed: number; errors: string[] } | null>(null);
   const [stats, setStats] = useState({
     totalEmployees: 0,
     activeEmployees: 0,
@@ -97,6 +101,118 @@ export default function EmployeeManagement() {
     await HRService.softDeleteEmployee(employee.id, { id: user.id, name: user.fullName });
     toast({ title: 'Thành công', description: 'Đã đánh dấu nhân viên nghỉ việc' });
     loadData();
+  };
+
+  const handleDownloadTemplate = () => {
+    downloadTemplate();
+    toast({ title: 'Tải xuống', description: 'Đã tải xuống template CSV' });
+  };
+
+  const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.csv')) {
+      toast({ variant: 'destructive', title: 'Lỗi', description: 'Vui lòng chọn file CSV' });
+      return;
+    }
+
+    try {
+      setIsImporting(true);
+      setIsImportOpen(true);
+      setImportResults(null);
+
+      // Read and parse CSV
+      const content = await readFileAsText(file);
+      const rows = parseCSV(content);
+
+      // Validate rows
+      const errors: string[] = [];
+      const validRows: ImportRow[] = [];
+
+      rows.forEach((row, index) => {
+        const error = validateImportRow(row, index + 2); // +2 because row 1 is header, array is 0-indexed
+        if (error) {
+          errors.push(error);
+        } else {
+          validRows.push(row);
+        }
+      });
+
+      if (validRows.length === 0) {
+        setImportResults({ successful: 0, failed: rows.length, errors });
+        toast({ variant: 'destructive', title: 'Lỗi', description: 'Không có dữ liệu hợp lệ để import' });
+        setIsImporting(false);
+        return;
+      }
+
+      // Convert to User format
+      const employeesToCreate = validRows.map(row => ({
+        fullName: row.fullName,
+        email: row.email,
+        phone: row.phone || '',
+        idNumber: row.idNumber,
+        department: row.department,
+        position: row.position,
+        location: row.location || 'Hồ Chí Minh, VN',
+        startDate: row.startDate,
+        contractType: row.contractType || 'Toàn thời gian (Không xác định thời hạn)',
+        baseSalary: row.baseSalary,
+        role: row.role || 'employee',
+        status: row.status || 'active',
+        managerId: row.managerId || '',
+        avatar: '',
+        managerName: '',
+      }));
+
+      // Bulk create
+      if (!user) {
+        toast({ variant: 'destructive', title: 'Lỗi', description: 'Không tìm thấy thông tin người dùng' });
+        setIsImporting(false);
+        return;
+      }
+
+      const result = await HRService.bulkCreateEmployees(
+        employeesToCreate,
+        { id: user.id, name: user.fullName }
+      );
+
+      // Collect creation errors
+      const creationErrors = result.results
+        .filter(r => !r.success)
+        .map(r => `${r.email}: ${r.error}`);
+
+      setImportResults({
+        successful: result.successful,
+        failed: result.failed + errors.length,
+        errors: [...errors, ...creationErrors],
+      });
+
+      if (result.successful > 0) {
+        toast({
+          title: 'Thành công',
+          description: `Đã tạo ${result.successful} nhân viên. ${result.failed > 0 ? `${result.failed} thất bại.` : ''}`
+        });
+        loadData();
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Lỗi',
+          description: 'Không thể tạo nhân viên nào'
+        });
+      }
+    } catch (error: any) {
+      console.error('Import error:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Lỗi',
+        description: error.message || 'Lỗi khi import file'
+      });
+    } finally {
+      setIsImporting(false);
+      // Reset file input
+      event.target.value = '';
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -215,6 +331,25 @@ export default function EmployeeManagement() {
                 />
               </DialogContent>
             </Dialog>
+            <Button variant="outline" onClick={handleDownloadTemplate}>
+              <Download className="h-4 w-4 mr-2" />
+              Tải template
+            </Button>
+            <label htmlFor="import-file">
+              <Button variant="outline" asChild>
+                <span>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Import CSV
+                </span>
+              </Button>
+            </label>
+            <input
+              id="import-file"
+              type="file"
+              accept=".csv"
+              onChange={handleImportFile}
+              className="hidden"
+            />
           </div>
         </CardContent>
       </Card>
@@ -312,6 +447,51 @@ export default function EmployeeManagement() {
             <DialogTitle>Chi tiết nhân viên</DialogTitle>
           </DialogHeader>
           {selectedEmployee && <EmployeeDetail employee={selectedEmployee} />}
+        </DialogContent>
+      </Dialog>
+
+      {/* Import Results Dialog */}
+      <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Kết quả import</DialogTitle>
+          </DialogHeader>
+          {isImporting ? (
+            <div className="flex flex-col items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mb-4"></div>
+              <p className="text-muted-foreground">Đang import dữ liệu...</p>
+            </div>
+          ) : importResults ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <Card>
+                  <CardContent className="p-4">
+                    <p className="text-sm text-muted-foreground">Thành công</p>
+                    <p className="text-2xl font-bold text-success">{importResults.successful}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4">
+                    <p className="text-sm text-muted-foreground">Thất bại</p>
+                    <p className="text-2xl font-bold text-destructive">{importResults.failed}</p>
+                  </CardContent>
+                </Card>
+              </div>
+              {importResults.errors.length > 0 && (
+                <div>
+                  <h4 className="font-semibold mb-2 text-destructive">Lỗi:</h4>
+                  <div className="max-h-60 overflow-y-auto space-y-1 text-sm">
+                    {importResults.errors.map((error, index) => (
+                      <p key={index} className="text-muted-foreground">• {error}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <Button onClick={() => setIsImportOpen(false)} className="w-full">
+                Đóng
+              </Button>
+            </div>
+          ) : null}
         </DialogContent>
       </Dialog>
     </MainLayout>
